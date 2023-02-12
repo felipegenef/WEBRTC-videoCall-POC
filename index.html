@@ -1,0 +1,106 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>Video Chat</title>
+    <script type="text/javascript" src="/socket.io/socket.io.js"></script>
+  </head>
+  <body>
+    <h1>Video Chat</h1>
+    <video id="localVideo" autoplay muted></video>
+    <video id="remoteVideo" autoplay></video>
+    <button id="callButton">Chamar</button>
+    <button id="hangupButton">Desligar</button>
+
+    <script>
+      try {
+        // Inicializar a conexão Socket.IO
+        const socket = io("http://localhost:3000");
+
+        // Configurar a conexão WebRTC
+        const localVideo = document.querySelector("#localVideo");
+        const remoteVideo = document.querySelector("#remoteVideo");
+        let localStream;
+        let remoteStream;
+        let pc = new RTCPeerConnection();
+
+        navigator.mediaDevices
+          .getUserMedia({ audio: true, video: true })
+          .then((stream) => {
+            localVideo.srcObject = stream;
+            localStream = stream;
+
+            // Adicionar a faixa de mídia local ao PeerConnection
+            stream.getTracks().forEach((track) => pc.addTrack(track, stream));
+          });
+
+        // Gerenciar a lógica do cliente para chamar e desligar
+        const callButton = document.querySelector("#callButton");
+        const hangupButton = document.querySelector("#hangupButton");
+        // callButton.disabled = true;
+        // hangupButton.disabled = true;
+
+        callButton.addEventListener("click", () => {
+          socket.emit("call");
+        });
+
+        hangupButton.addEventListener("click", () => {
+          socket.emit("hangup");
+        });
+
+        socket.on("call", () => {
+          // Criar a oferta para iniciar a chamada
+          pc.createOffer()
+            .then((offer) => {
+              return pc.setLocalDescription(offer);
+            })
+            .then(() => {
+              socket.emit("offer", pc.localDescription);
+            });
+
+          callButton.disabled = true;
+          hangupButton.disabled = false;
+        });
+        socket.on("offer", (offer) => {
+          console.log({ offer });
+          pc.setRemoteDescription(offer);
+          pc.createAnswer()
+            .then((answer) => {
+              return pc.setLocalDescription(answer);
+            })
+            .then(() => {
+              socket.emit("answer", pc.localDescription);
+            });
+        });
+        socket.on("answer", (answer) => {
+          console.log({ answer });
+          // Receber a resposta e configurar a conexão
+          pc.setRemoteDescription(answer);
+        });
+
+        socket.on("hangup", () => {
+          // Encerrar a chamada
+          pc.close();
+          remoteVideo.srcObject = null;
+          hangupButton.disabled = true;
+          callButton.disabled = false;
+        });
+
+        pc.ontrack = (event) => {
+          // Adicionar a faixa de mídia remota à tela de visualização
+          remoteVideo.srcObject = event.streams[0];
+        };
+
+        // Habilitar os botões quando a conexão for estabelecida
+        pc.oniceconnectionstatechange = (event) => {
+          if (pc.iceConnectionState === "connected") {
+            callButton.disabled = false;
+            hangupButton.disabled = false;
+          }
+        };
+      } catch (error) {
+        alert(error);
+      }
+    </script>
+  </body>
+</html>
